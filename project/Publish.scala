@@ -49,17 +49,28 @@ object Publish extends AutoPlugin {
     sonatypeRepo(version.value) orElse localRepo(defaultPublishTo.value)
   }
 
-  private def sonatypeRepo(version: String): Option[Resolver] =
-    Option(sys.props("publish.maven.central")) filter (_.toLowerCase == "true") map { _ =>
-      val nexus = "https://oss.sonatype.org/"
-      if (version endsWith "-SNAPSHOT") "snapshots" at nexus + "content/repositories/snapshots"
-      else "releases" at nexus + "service/local/staging/deploy/maven2"
+  private def sonatypeRepo(version: String): Option[Resolver] = {
+    val nexus = sysPropOrDefault("nexusurl","thatone") //"http://nexus.aws.aspect.com:8081/nexus/"
+    if (version endsWith "-SNAPSHOT") {
+      Some("snapshots" at nexus + "content/repositories/snapshots")
     }
+
+    else {
+      Some("releases" at nexus + "content/repositories/releases")
+    }
+  }
 
   private def localRepo(repository: File) =
     Some(Resolver.file("Default Local Repository", repository))
 
-  private def akkaCredentials: Seq[Credentials] =
-    Option(System.getProperty("akka.publish.credentials", null)).map(f => Credentials(new File(f))).toSeq
+  def sysPropOrDefault(propName:String,default:String):String = Option(System.getProperty(propName)).getOrElse(default)
+
+  private def akkaCredentials: Seq[Credentials] = {
+    val project = sysPropOrDefault("project","thatone")
+    val username = sysPropOrDefault("username","change_me")
+    val password = sysPropOrDefault("password","chuckNorris")
+    Seq(Credentials("Sonatype Nexus Repository Manager", project,username, password))
+    // Option(System.getProperty("akka.publish.credentials", null)).map(f => Credentials(new File(f))).toSeq
+  }
 
 }

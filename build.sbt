@@ -30,6 +30,11 @@ scalacOptions ++= Seq(
   "-Xfuture"
 )
 
+def sysPropOrDefault(propName:String,default:String):String = Option(System.getProperty(propName)).getOrElse(default)
+
+resolvers ++= Seq("local-nexus-snapshots" at sysPropOrDefault("resolver", "https://oss.sonatype.org/content/repositories")+"/snapshots/",
+  "local-nexus-releases" at sysPropOrDefault("resolver", "https://oss.sonatype.org/content/repositories")+"/releases/")
+
 // group tests, a single test per group
 def singleTests(tests: Seq[TestDefinition]) = {
   // We could group non Cassandra tests into another group
@@ -59,7 +64,7 @@ testOptions += Tests.Argument(TestFrameworks.JUnit, "-v", "-a")
 // disable parallel tests
 parallelExecution in Test := false
 
-val AkkaVersion = "2.4.14"
+val AkkaVersion = "2.4.16-aspect-SNAPSHOT"
 
 libraryDependencies ++= Seq(
   "com.datastax.cassandra"  % "cassandra-driver-core"               % "3.1.0",
