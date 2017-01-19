@@ -3,6 +3,7 @@
  */
 package akka.persistence.cassandra.journal
 
+import java.io.{PrintWriter, StringWriter}
 import java.nio.ByteBuffer
 
 import java.util.{ HashMap => JHMap, Map => JMap }
@@ -190,6 +191,12 @@ class CassandraJournal(cfg: Config) extends AsyncWriteJournal with CassandraReco
       publishTagNotification(serialized, result)
       // Nil == all good
       result.map(_ => Nil)(akka.dispatch.ExecutionContexts.sameThreadExecutionContext)
+    }.recover{
+      case ex: Exception =>
+        val sw = new StringWriter
+        ex.printStackTrace(new PrintWriter(sw))
+        log.error(s"Failed to serialize the events. Exception: ${sw.toString} ")
+        throw ex
     }
   }
 
