@@ -5,6 +5,7 @@ package akka.persistence.cassandra.journal
 
 import java.io.{PrintWriter, StringWriter}
 import java.nio.ByteBuffer
+import java.time.Instant
 
 import java.util.{ HashMap => JHMap, Map => JMap }
 import java.lang.{ Long => JLong }
@@ -189,9 +190,12 @@ class CassandraJournal(cfg: Config) extends AsyncWriteJournal with CassandraReco
           rec(groups, Nil)
         }
 
+      val startWrite = Instant.now().toEpochMilli
+
       result.onComplete { _ =>
-        if(pid.toLowerCase.contains("worktype"))
-          println(s"[CassandraJournal - worktype metrics] - batch size: ${messages.size} has finished")
+        if(pid.toLowerCase.contains("worktype")) {
+          println(s"[CassandraJournal - worktype metrics] - batch size: ${messages.size} has finished, and took: ${Instant.now().toEpochMilli - startWrite} millis")
+        }
 
         self ! WriteFinished(pid, p.future)
         p.success(Done)
