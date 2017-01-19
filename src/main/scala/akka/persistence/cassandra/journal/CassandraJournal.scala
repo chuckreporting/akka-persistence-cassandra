@@ -169,21 +169,30 @@ class CassandraJournal(cfg: Config) extends AsyncWriteJournal with CassandraReco
     Future(messages.map(serialize)).flatMap { serialized =>
       val result =
         if (messages.size <= config.maxMessageBatchSize) {
+          if(pid.toLowerCase.contains("worktype"))
+            println(s"[CassandraJournal - worktype metrics] - batch size: ${messages.size} is smaller than the max: ${config.maxMessageBatchSize}")
+
           // optimize for the common case
-          writeMessages(serialized)
+          writeMessages(pid, serialized)
         } else {
+          if(pid.toLowerCase.contains("worktype"))
+            println(s"[CassandraJournal - worktype metrics] - batch size: ${messages.size} is bigger than the max: ${config.maxMessageBatchSize}")
+
           val groups: List[Seq[SerializedAtomicWrite]] = serialized.grouped(config.maxMessageBatchSize).toList
 
           // execute the groups in sequence
           def rec(todo: List[Seq[SerializedAtomicWrite]], acc: List[Unit]): Future[List[Unit]] =
             todo match {
-              case write :: remainder => writeMessages(write).flatMap(result => rec(remainder, result :: acc))
+              case write :: remainder => writeMessages(pid, write).flatMap(result => rec(remainder, result :: acc))
               case Nil                => Future.successful(acc.reverse)
             }
           rec(groups, Nil)
         }
 
       result.onComplete { _ =>
+        if(pid.toLowerCase.contains("worktype"))
+          println(s"[CassandraJournal - worktype metrics] - batch size: ${messages.size} has finished")
+
         self ! WriteFinished(pid, p.future)
         p.success(Done)
       }(akka.dispatch.ExecutionContexts.sameThreadExecutionContext)
@@ -200,15 +209,15 @@ class CassandraJournal(cfg: Config) extends AsyncWriteJournal with CassandraReco
     }
   }
 
-  private def writeMessages(atomicWrites: Seq[SerializedAtomicWrite]): Future[Unit] = {
+  private def writeMessages(pid: String, atomicWrites: Seq[SerializedAtomicWrite]): Future[Unit] = {
     val boundStatements = statementGroup(atomicWrites)
     boundStatements.size match {
       case 1 =>
-        boundStatements.head.flatMap(execute(_, writeRetryPolicy))
+        boundStatements.head.flatMap(execute(pid, _, writeRetryPolicy))
       case 0 => Future.successful(())
       case _ =>
         Future.sequence(boundStatements).flatMap { stmts =>
-          executeBatch(batch => stmts.foreach(batch.add), writeRetryPolicy)
+          executeBatch(pid, batch => stmts.foreach(batch.add), writeRetryPolicy)
         }
     }
   }
@@ -303,7 +312,7 @@ class CassandraJournal(cfg: Config) extends AsyncWriteJournal with CassandraReco
                 val boundStatements = messageIds.map(mid =>
                   preparedDeleteMessages.map(_.bind(mid.persistenceId, partitionNr: JLong, mid.sequenceNr: JLong)))
                 Future.sequence(boundStatements).flatMap { stmts =>
-                  executeBatch(batch => stmts.foreach(batch.add), deleteRetryPolicy)
+                  executeBatch(persistenceId, batch => stmts.foreach(batch.add), deleteRetryPolicy)
                 }
               }
 
@@ -324,7 +333,7 @@ class CassandraJournal(cfg: Config) extends AsyncWriteJournal with CassandraReco
             } else {
               Future.sequence(partitionInfos.map(future => future.flatMap { pi =>
                 val boundDeleteMessages = preparedDeleteMessages.map(_.bind(persistenceId, pi.partitionNr: JLong, toSeqNr: JLong))
-                boundDeleteMessages.flatMap(execute(_, deleteRetryPolicy))
+                boundDeleteMessages.flatMap(execute(persistenceId, _, deleteRetryPolicy))
               }))
                 .onFailure {
                   case e => log.warning("Unable to complete deletes for persistence id {}, toSequenceNr {}. " +
@@ -353,13 +362,17 @@ class CassandraJournal(cfg: Config) extends AsyncWriteJournal with CassandraReco
         .getOrElse(PartitionInfo(partitionNr, minSequenceNr(partitionNr), -1)))
   }
 
-  private def executeBatch(body: BatchStatement ⇒ Unit, retryPolicy: RetryPolicy): Future[Unit] = {
+  private def executeBatch(pid: String, body: BatchStatement ⇒ Unit, retryPolicy: RetryPolicy): Future[Unit] = {
+    if(pid.toLowerCase.contains("worktype"))
+      println("[CassandraJournal - worktype metrics] - executing Cassandra batch write")
     val batch = new BatchStatement().setConsistencyLevel(writeConsistency).setRetryPolicy(retryPolicy).asInstanceOf[BatchStatement]
     body(batch)
     session.underlying().flatMap(_.executeAsync(batch)).map(_ => ())
   }
 
-  private def execute(stmt: Statement, retryPolicy: RetryPolicy): Future[Unit] = {
+  private def execute(pid: String, stmt: Statement, retryPolicy: RetryPolicy): Future[Unit] = {
+    if(pid.toLowerCase.contains("worktype"))
+      println("[CassandraJournal - worktype metrics] - executing Cassandra write")
     stmt.setConsistencyLevel(writeConsistency).setRetryPolicy(retryPolicy)
     session.executeWrite(stmt).map(_ => ())
   }
